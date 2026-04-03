@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GeoNode-VZ · Monitor Sísmico</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --void:    #020508;
+  --surface: #050c14;
+  --card:    #08111c;
+  --border:  #0c2038;
+  --accent:  #00e5ff;
+  --green:   #00ff88;
+  --red:     #ff2244;
+  --amber:   #ffaa00;
+  --text:    #cce8ff;
+  --muted:   #3a6080;
+  --dim:     #182d42;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+html, body { height:100%; }
+
+body {
+  background: var(--void);
+  color: var(--text);
+  font-family: 'Rajdhani', sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* Fondo grid */
+body::before {
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background:
+    repeating-linear-gradient(0deg,transparent,transparent 39px,rgba(0,229,255,0.025) 40px),
+    repeating-linear-gradient(90deg,transparent,transparent 39px,rgba(0,229,255,0.025) 40px);
+}
+/* Scanlines */
+body::after {
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background: repeating-linear-gradient(
+    0deg, transparent, transparent 3px, rgba(0,0,0,0.12) 3px, rgba(0,0,0,0.12) 4px
+  );
+}
+
+.wrap {
+  max-width:1340px; margin:0 auto; padding:16px 20px;
+  position:relative; z-index:1;
+}
+
+/* ═══ HEADER ═══ */
+header {
+  display:flex; justify-content:space-between; align-items:flex-start;
+  padding-bottom:14px; margin-bottom:18px;
+  border-bottom:1px solid var(--border);
+  position:relative;
+}
+header::after {
+  content:''; position:absolute; bottom:-1px; left:0;
+  width:220px; height:1px;
+  background:var(--accent); box-shadow:0 0 18px var(--accent), 0 0 40px rgba(0,229,255,.2);
+}
+.logo {
+  font-family:'Orbitron',monospace;
+  font-size:clamp(1.4rem,4vw,2.1rem);
+  font-weight:900; letter-spacing:.1em;
+  color:var(--accent);
+  text-shadow:0 0 28px rgba(0,229,255,.55), 0 0 70px rgba(0,229,255,.15);
+  line-height:1;
+}
+.logo-sub {
+  font-family:'Share Tech Mono',monospace; font-size:.62rem;
+  display:inline-block; vertical-align:middle; margin-left:12px;
+  background:rgba(0,229,255,.08); border:1px solid rgba(0,229,255,.2);
+  color:var(--muted); padding:2px 8px; border-radius:2px;
+  letter-spacing:.18em;
+}
+.logo-desc {
+  font-family:'Share Tech Mono',monospace; font-size:.62rem;
+  color:var(--dim); letter-spacing:.22em; margin-top:8px;
+  text-transform:uppercase;
+}
+.header-r { display:flex; flex-direction:column; align-items:flex-end; gap:7px; }
+.clock {
+  font-family:'Share Tech Mono',monospace; font-size:.68rem;
+  color:var(--muted); letter-spacing:.12em;
+}
+#conn-badge {
+  font-family:'Share Tech Mono',monospace; font-size:.6rem;
+  letter-spacing:.2em; padding:4px 12px; border-radius:2px;
+  display:flex; align-items:center; gap:7px; border:1px solid;
+  transition:all .4s;
+}
+#conn-badge.internet { color:var(--green); border-color:rgba(0,255,136,.35); background:rgba(0,255,136,.05); }
+#conn-badge.intranet { color:var(--amber); border-color:rgba(255,170,0,.35);  background:rgba(255,170,0,.05); }
+#conn-badge.serial   { color:var(--accent); border-color:rgba(0,229,255,.35); background:rgba(0,229,255,.05); }
+#conn-badge.demo     { color:#a070ff; border-color:rgba(160,112,255,.35);     background:rgba(160,112,255,.05); }
+#conn-badge.offline  { color:var(--red); border-color:rgba(255,34,68,.35);    background:rgba(255,34,68,.05); }
+.dot {
+  width:6px; height:6px; border-radius:50%;
+  background:currentColor; animation:blink 1.4s ease-in-out infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.15} }
+
+/* ═══ TRIPLE CONTINGENCIA BAR ═══ */
+.ct-bar {
+  display:flex; gap:8px; margin-bottom:18px;
+}
+.ct-item {
+  flex:1; padding:9px 12px; border-radius:3px;
+  border:1px solid var(--border);
+  display:flex; align-items:center; gap:10px;
+  font-family:'Share Tech Mono',monospace; font-size:.6rem;
+  transition:all .4s; position:relative; overflow:hidden;
+}
+.ct-item::before {
+  content:''; position:absolute; top:0; left:0;
+  height:100%; width:2px;
+  background:transparent; transition:background .4s, box-shadow .4s;
+}
+.ct-dot {
+  width:8px; height:8px; border-radius:50%;
+  background:var(--dim); transition:all .4s; flex-shrink:0;
+}
+.ct-name { color:var(--text); letter-spacing:.14em; font-weight:600; }
+.ct-info { color:var(--muted); font-size:.55rem; margin-left:auto; }
+.ct-num  {
+  font-size:.65rem; font-weight:700;
+  background:rgba(255,255,255,.04); border:1px solid var(--dim);
+  padding:1px 7px; border-radius:2px; color:var(--dim);
+  transition:all .4s;
+}
+
+/* Estados */
+.ct-item.active {
+  border-color:rgba(0,255,136,.35);
+  background:rgba(0,255,136,.03);
+}
+.ct-item.active::before { background:var(--green); box-shadow:0 0 8px var(--green); }
+.ct-item.active .ct-dot {
+  background:var(--green); box-shadow:0 0 10px var(--green);
+  animation:blink .9s ease-in-out infinite;
+}
+.ct-item.active .ct-num { color:var(--green); border-color:rgba(0,255,136,.3); }
+
+.ct-item.standby { border-color:rgba(255,170,0,.2); background:rgba(255,170,0,.02); }
+.ct-item.standby::before { background:var(--amber); box-shadow:0 0 6px var(--amber); }
+.ct-item.standby .ct-dot { background:var(--amber); }
+.ct-item.standby .ct-num { color:var(--amber); border-color:rgba(255,170,0,.3); }
+
+.ct-item.inactive { opacity:.35; }
+
+/* ═══ MÉTRICAS GRID ═══ */
+.metrics { display:grid; grid-template-columns:1.5fr 1fr 1fr; gap:14px; margin-bottom:14px; }
+@media(max-width:780px){ .metrics{grid-template-columns:1fr 1fr;} }
+@media(max-width:500px){ .metrics{grid-template-columns:1fr;} }
+
+.panel {
+  background:var(--card); border:1px solid var(--border);
+  border-radius:4px; padding:18px 20px;
+  position:relative; overflow:hidden;
+  transition:border-color .3s, box-shadow .3s;
+}
+.panel::before {
+  content:''; position:absolute; top:0; left:0;
+  width:2px; height:100%;
+  background:var(--accent); box-shadow:0 0 8px var(--accent); opacity:.3;
+  transition:opacity .3s, background .3s;
+}
+.panel::after {
+  content:''; position:absolute; top:0; right:0;
+  width:18px; height:18px;
+  border-top:1px solid var(--accent); border-right:1px solid var(--accent); opacity:.25;
+}
+.panel-label {
+  font-family:'Share Tech Mono',monospace; font-size:.57rem;
+  color:var(--muted); letter-spacing:.22em; text-transform:uppercase;
+  margin-bottom:12px; display:flex; align-items:center; gap:6px;
+}
+.panel-label::before {
+  content:''; display:inline-block;
+  width:4px; height:4px; border-radius:50%;
+  background:var(--accent); box-shadow:0 0 6px var(--accent);
+}
+
+/* Panel PGA */
+.pga-val {
+  font-family:'Orbitron',monospace;
+  font-size:clamp(2.6rem,6vw,4rem);
+  font-weight:900; color:#fff; line-height:1;
+  letter-spacing:-.02em;
+  text-shadow:0 0 40px rgba(255,255,255,.15);
+  transition:color .35s, text-shadow .35s;
+}
+.pga-unit {
+  font-family:'Share Tech Mono',monospace; font-size:.65rem;
+  color:var(--muted); margin-top:6px; letter-spacing:.1em;
+}
+.pga-val.alerta {
+  color:var(--red);
+  text-shadow:0 0 30px rgba(255,34,68,.8), 0 0 70px rgba(255,34,68,.3);
+  animation:pulse-r .45s ease-in-out infinite alternate;
+}
+@keyframes pulse-r { from{opacity:1} to{opacity:.6} }
+
+/* Segmentos */
+.intensity-grid {
+  display:grid; grid-template-columns:repeat(12,1fr); gap:3px; margin-top:14px;
+}
+.i-seg {
+  height:7px; border-radius:1px; background:var(--dim);
+  transition:background .12s, box-shadow .12s;
+}
+
+/* Panel status */
+.panel.danger { border-color:rgba(255,34,68,.45); box-shadow:0 0 20px rgba(255,34,68,.08); }
+.panel.danger::before { background:var(--red); box-shadow:0 0 10px var(--red); opacity:.7; }
+.s-icon { font-size:1.8rem; margin-bottom:8px; display:block; }
+#status-text {
+  font-family:'Orbitron',monospace; font-size:.88rem; font-weight:700;
+  letter-spacing:.07em; color:var(--green); line-height:1.3;
+  transition:color .3s;
+}
+#status-text.danger { color:var(--red); }
+#ia-desc {
+  font-family:'Rajdhani',sans-serif; font-size:.75rem;
+  color:var(--muted); margin-top:10px; line-height:1.55;
+}
+
+/* Panel umbral */
+.umbral-val {
+  font-family:'Orbitron',monospace; font-size:2.1rem; font-weight:700;
+  color:var(--amber); letter-spacing:-.01em;
+}
+.prog-track {
+  height:3px; background:var(--border); border-radius:2px;
+  margin:12px 0 5px; overflow:hidden;
+}
+.prog-bar {
+  height:100%; border-radius:2px;
+  background:linear-gradient(90deg, var(--amber), #ff7700);
+  transition:width .6s cubic-bezier(.4,0,.2,1);
+}
+.prog-labels {
+  display:flex; justify-content:space-between;
+  font-family:'Share Tech Mono',monospace; font-size:.5rem; color:var(--dim);
+}
+
+/* ═══ CHART ═══ */
+.chart-panel {
+  background:var(--card); border:1px solid var(--border);
+  border-radius:4px; padding:16px 18px; margin-bottom:14px;
+  position:relative;
+}
+.chart-header {
+  display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;
+}
+.chart-title {
+  font-family:'Share Tech Mono',monospace; font-size:.58rem;
+  color:var(--muted); letter-spacing:.18em;
+}
+.chart-live {
+  font-family:'Share Tech Mono',monospace; font-size:.55rem;
+  color:var(--green); border:1px solid rgba(0,255,136,.3);
+  padding:2px 9px; border-radius:2px; animation:blink 1s ease-in-out infinite;
+}
+
+/* ═══ SERIAL PANEL ═══ */
+#serial-panel {
+  display:none;
+  background:var(--surface); border:1px solid rgba(0,229,255,.18);
+  border-radius:4px; padding:14px 16px; margin-bottom:14px;
+}
+#serial-panel.visible { display:block; }
+.serial-header {
+  display:flex; align-items:center; gap:10px; margin-bottom:10px;
+}
+#btn-serial {
+  font-family:'Share Tech Mono',monospace; font-size:.62rem;
+  background:rgba(0,229,255,.07); border:1px solid rgba(0,229,255,.3);
+  color:var(--accent); padding:7px 16px; border-radius:3px; cursor:pointer;
+  letter-spacing:.14em; transition:all .2s;
+}
+#btn-serial:hover { background:rgba(0,229,255,.14); }
+.serial-note {
+  font-family:'Share Tech Mono',monospace; font-size:.55rem;
+  color:var(--dim); letter-spacing:.1em;
+}
+.serial-log {
+  font-family:'Share Tech Mono',monospace; font-size:.62rem;
+  color:var(--muted); height:90px; overflow-y:auto;
+  border:1px solid var(--border); padding:8px 10px; border-radius:3px;
+  background:var(--void); line-height:1.6;
+  scrollbar-width:thin; scrollbar-color:var(--dim) transparent;
+}
+
+/* ═══ STATUS BAR ═══ */
+.status-bar {
+  display:grid; grid-template-columns:repeat(5,1fr); gap:12px;
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:4px; padding:12px 16px; margin-bottom:14px;
+}
+@media(max-width:700px){ .status-bar{grid-template-columns:repeat(3,1fr);} }
+@media(max-width:450px){ .status-bar{grid-template-columns:repeat(2,1fr);} }
+.sb-lbl {
+  font-family:'Share Tech Mono',monospace; font-size:.5rem;
+  color:var(--dim); letter-spacing:.15em; margin-bottom:4px;
+}
+.sb-val {
+  font-family:'Share Tech Mono',monospace; font-size:.68rem; color:var(--text);
+}
+.sb-val.ok   { color:var(--green); }
+.sb-val.warn { color:var(--amber); }
+.sb-val.err  { color:var(--red); }
+.sb-val.info { color:var(--accent); }
+
+/* ═══ FOOTER ═══ */
+footer {
+  text-align:center; padding-top:12px;
+  font-family:'Share Tech Mono',monospace; font-size:.55rem;
+  color:var(--dim); letter-spacing:.2em;
+  border-top:1px solid var(--border);
+}
+footer span { color:var(--border); margin:0 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- HEADER -->
+  <header>
+    <div>
+      <div class="logo">
+        GEONODE<span style="color:var(--muted)">-</span>VZ
+        <span class="logo-sub">IoT · v3.0</span>
+      </div>
+      <div class="logo-desc">Monitor sísmico de estructura · Triple contingencia activa</div>
+    </div>
+    <div class="header-r">
+      <div class="clock" id="sys-clock">--:--:-- UTC</div>
+      <div id="conn-badge" class="offline">
+        <span class="dot"></span>
+        <span id="conn-mode">CONECTANDO...</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- TRIPLE CONTINGENCIA -->
+  <div class="ct-bar">
+    <div class="ct-item inactive" id="ct-internet">
+      <span class="ct-dot"></span>
+      <div>
+        <div class="ct-name">① INTERNET</div>
+        <div class="ct-info">WiFi STA · IP dinámica</div>
+      </div>
+      <span class="ct-num" id="ct-i-ip">—</span>
+    </div>
+    <div class="ct-item inactive" id="ct-intranet">
+      <span class="ct-dot"></span>
+      <div>
+        <div class="ct-name">② INTRANET</div>
+        <div class="ct-info">AP local · 192.168.4.1</div>
+      </div>
+      <span class="ct-num">AP</span>
+    </div>
+    <div class="ct-item inactive" id="ct-serial">
+      <span class="ct-dot"></span>
+      <div>
+        <div class="ct-name">③ BT / SERIAL</div>
+        <div class="ct-info">Web Serial API</div>
+      </div>
+      <span class="ct-num" id="ct-s-status">USB/BT</span>
+    </div>
+  </div>
+
+  <!-- MÉTRICAS -->
+  <div class="metrics">
+
+    <!-- PGA -->
+    <div class="panel" id="pga-panel">
+      <div class="panel-label">Aceleración PGA</div>
+      <div class="pga-val" id="pga-val">0.00</div>
+      <div class="pga-unit">m/s² &nbsp;·&nbsp; EMA α=0.2 &nbsp;·&nbsp; Δg corregido</div>
+      <div class="intensity-grid" id="intensity-grid"></div>
+    </div>
+
+    <!-- STATUS -->
+    <div class="panel" id="status-panel">
+      <div class="panel-label">Diagnóstico IA</div>
+      <span class="s-icon" id="status-icon">🟢</span>
+      <div id="status-text">ESTRUCTURA SEGURA</div>
+      <div id="ia-desc">Parámetros en rango nominal. Sistema en operación normal.</div>
+    </div>
+
+    <!-- UMBRAL -->
+    <div class="panel">
+      <div class="panel-label">Umbral — Potenciómetro</div>
+      <div class="umbral-val" id="umbral-val">
+        4.5 <span style="font-size:.85rem;color:var(--muted)">m/s²</span>
+      </div>
+      <div class="prog-track"><div class="prog-bar" id="umbral-bar" style="width:45%"></div></div>
+      <div class="prog-labels"><span>1.0</span><span>5.5</span><span>10.0</span></div>
+    </div>
+  </div>
+
+  <!-- CHART -->
+  <div class="chart-panel">
+    <div class="chart-header">
+      <div class="chart-title">SISMÓGRAFO · TIEMPO REAL · EJE XYZ COMPUESTO · PGA EMA</div>
+      <div class="chart-live" id="chart-live-badge">● LIVE</div>
+    </div>
+    <canvas id="sismoChart" height="70"></canvas>
+  </div>
+
+  <!-- SERIAL PANEL -->
+  <div id="serial-panel">
+    <div class="serial-header">
+      <button id="btn-serial" onclick="connectSerial()">⚡ CONECTAR SERIAL / BT</button>
+      <span class="serial-note">Requiere Chrome / Edge &nbsp;·&nbsp; Baudrate: 115200</span>
+    </div>
+    <div class="serial-log" id="serial-log">Esperando conexión...</div>
+  </div>
+
+  <!-- STATUS BAR -->
+  <div class="status-bar">
+    <div>
+      <div class="sb-lbl">Canal Activo</div>
+      <div class="sb-val" id="sb-canal">—</div>
+    </div>
+    <div>
+      <div class="sb-lbl">Eventos Sísmicos</div>
+      <div class="sb-val warn" id="sb-events">0</div>
+    </div>
+    <div>
+      <div class="sb-lbl">Temperatura MPU</div>
+      <div class="sb-val" id="sb-temp">—</div>
+    </div>
+    <div>
+      <div class="sb-lbl">Uptime ESP32</div>
+      <div class="sb-val info" id="sb-uptime">—</div>
+    </div>
+    <div>
+      <div class="sb-lbl">Nodo ESP32</div>
+      <div class="sb-val ok" id="sb-node">ACTIVO</div>
+    </div>
+  </div>
+
+  <footer>
+    GEONODE-VZ &nbsp;<span>|</span>&nbsp;
+    INTERNET <span>·</span> INTRANET <span>·</span> BLUETOOTH SERIAL &nbsp;<span>|</span>&nbsp;
+    TRIPLE CONTINGENCIA &nbsp;<span>|</span>&nbsp; 2025
+  </footer>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+//  GEONODE-VZ — Motor de Triple Contingencia
+//  Prioridad: ① Internet STA  →  ② Intranet AP  →  ③ BT/Serial
+// ═══════════════════════════════════════════════════════════════════
+
+const CFG = {
+  fetchInterval : 120,    // ms entre peticiones HTTP
+  timeout       : 1500,   // ms timeout por request
+  maxFails      : 3,      // fallos antes de failover
+  demoInterval  : 100,    // ms en modo demo
+  demoAmplitude : 1.2,    // amplitud pico demo
+  apIP          : 'http://192.168.4.1'
+};
+
+// ─── Estado ───────────────────────────────────────────────────────
+let mode      = 'none';   // internet | intranet | serial | demo | none
+let failCount = 0;
+let eventCnt  = 0;
+let wasAlert  = false;
+let fetchLoop = null;
+let demoLoop  = null;
+let demoT     = 0;
+let serialPort, serialReader, serialBuf = '';
+let internetURL = null;   // IP STA detectada
+
+// ─── Chart ────────────────────────────────────────────────────────
+const POINTS = 90;
+let chart;
+
+function initChart(){
+  const ctx = document.getElementById('sismoChart').getContext('2d');
+  chart = new Chart(ctx,{
+    type:'line',
+    data:{
+      labels: Array(POINTS).fill(''),
+      datasets:[{
+        data: Array(POINTS).fill(0),
+        borderColor:'#00ff88', borderWidth:1.5,
+        tension:0.35, fill:true, pointRadius:0,
+        backgroundColor:(c)=>{
+          const g = c.chart.ctx.createLinearGradient(0,0,0,160);
+          g.addColorStop(0,'rgba(0,255,136,.18)');
+          g.addColorStop(1,'rgba(0,255,136,0)');
+          return g;
+        }
+      }]
+    },
+    options:{
+      responsive:true, animation:false,
+      scales:{
+        y:{ min:0, max:12,
+          grid:{color:'rgba(0,229,255,.035)'},
+          ticks:{color:'#1a3550',font:{family:"'Share Tech Mono'",size:9},maxTicksLimit:7}
+        },
+        x:{ display:false }
+      },
+      plugins:{legend:{display:false}},
+      interaction:{intersect:false}
+    }
+  });
+}
+
+// ─── Segmentos de intensidad ──────────────────────────────────────
+(function(){
+  const g=document.getElementById('intensity-grid');
+  for(let i=0;i<12;i++){
+    const d=document.createElement('div'); d.className='i-seg'; g.appendChild(d);
+  }
+})();
+
+function updateIntensity(mag,umbral){
+  const segs=document.querySelectorAll('.i-seg');
+  const r=Math.min(mag/12,1);
+  segs.forEach((s,i)=>{
+    const t=(i+1)/12;
+    if(t<=r){
+      if(mag>umbral){        s.style.cssText='background:#ff2244;box-shadow:0 0 5px #ff2244'; }
+      else if(r>.65){        s.style.cssText='background:#ffaa00;box-shadow:0 0 5px #ffaa00'; }
+      else{                  s.style.cssText='background:#00ff88;box-shadow:0 0 5px #00ff88'; }
+    } else {
+      s.style.cssText='background:var(--dim);box-shadow:none';
+    }
+  });
+}
+
+// ─── Reloj ────────────────────────────────────────────────────────
+setInterval(()=>{
+  const n=new Date();
+  document.getElementById('sys-clock').textContent=
+    n.toUTCString().slice(17,25)+' UTC';
+},1000);
+
+// ─── Aplicar datos ────────────────────────────────────────────────
+function applyData(d){
+  const mag    = isFinite(+d.mag)    ? +d.mag    : 0;
+  const umbral = isFinite(+d.umbral) ? +d.umbral : 4.5;
+  const status = d.status || 'ESTRUCTURA SEGURA';
+
+  // PGA
+  const pgaEl=document.getElementById('pga-val');
+  pgaEl.textContent=mag.toFixed(2);
+  pgaEl.classList.toggle('alerta',mag>umbral);
+
+  // Status panel
+  const sp  =document.getElementById('status-panel');
+  const st  =document.getElementById('status-text');
+  const icon=document.getElementById('status-icon');
+  const desc=document.getElementById('ia-desc');
+
+  if(mag>umbral){
+    sp.classList.add('danger');
+    st.textContent=mag>7?'⚠ RIESGO CRÍTICO':'⚠ SISMO DETECTADO';
+    st.className='danger';
+    icon.textContent='🔴';
+    desc.textContent='Vibración supera umbral crítico. Evaluando integridad estructural.';
+    if(chart){
+      chart.data.datasets[0].borderColor='#ff2244';
+      chart.data.datasets[0].backgroundColor=(c)=>{
+        const g=c.chart.ctx.createLinearGradient(0,0,0,160);
+        g.addColorStop(0,'rgba(255,34,68,.2)'); g.addColorStop(1,'rgba(255,34,68,0)');
+        return g;
+      };
+    }
+    if(!wasAlert){ eventCnt++; document.getElementById('sb-events').textContent=eventCnt; }
+    wasAlert=true;
+  } else {
+    sp.classList.remove('danger');
+    st.textContent=status; st.className='';
+    icon.textContent='🟢';
+    desc.textContent='Análisis en parámetros nominales. Sistema operando con normalidad.';
+    if(chart){
+      chart.data.datasets[0].borderColor='#00ff88';
+      chart.data.datasets[0].backgroundColor=(c)=>{
+        const g=c.chart.ctx.createLinearGradient(0,0,0,160);
+        g.addColorStop(0,'rgba(0,255,136,.18)'); g.addColorStop(1,'rgba(0,255,136,0)');
+        return g;
+      };
+    }
+    wasAlert=false;
+  }
+
+  // Umbral
+  const pct=Math.min((umbral/10)*100,100);
+  document.getElementById('umbral-val').innerHTML=
+    umbral.toFixed(1)+' <span style="font-size:.85rem;color:var(--muted)">m/s²</span>';
+  document.getElementById('umbral-bar').style.width=pct+'%';
+
+  updateIntensity(mag,umbral);
+
+  if(chart){
+    chart.data.datasets[0].data.push(mag);
+    chart.data.datasets[0].data.shift();
+    chart.update();
+  }
+
+  // Extras
+  if(d.temp  !=null) document.getElementById('sb-temp').textContent=(+d.temp).toFixed(1)+'°C';
+  if(d.uptime!=null){
+    const s=+d.uptime;
+    document.getElementById('sb-uptime').textContent=
+      `${String(Math.floor(s/3600)).padStart(2,'0')}:`+
+      `${String(Math.floor((s%3600)/60)).padStart(2,'0')}:`+
+      `${String(s%60).padStart(2,'0')}`;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  UI DE CONTINGENCIA
+// ═══════════════════════════════════════════════════════════════════
+
+function setMode(m, extra){
+  mode=m; failCount=0;
+  const badge=document.getElementById('conn-badge');
+  const modeEl=document.getElementById('conn-mode');
+  const sbCanal=document.getElementById('sb-canal');
+  const sbNode=document.getElementById('sb-node');
+
+  ['ct-internet','ct-intranet','ct-serial'].forEach(id=>{
+    document.getElementById(id).className='ct-item inactive';
+  });
+  document.getElementById('serial-panel').classList.remove('visible');
+
+  if(m==='internet'){
+    badge.className='internet'; modeEl.textContent='INTERNET STA';
+    sbCanal.innerHTML='<span class="ok">INTERNET</span>';
+    sbNode.className='sb-val ok'; sbNode.textContent='CONECTADO';
+    document.getElementById('ct-internet').className='ct-item active';
+    document.getElementById('ct-intranet').className='ct-item standby';
+    document.getElementById('ct-serial').className='ct-item standby';
+    if(extra) document.getElementById('ct-i-ip').textContent=extra;
+    document.getElementById('chart-live-badge').style.color='var(--green)';
+  } else if(m==='intranet'){
+    badge.className='intranet'; modeEl.textContent='INTRANET AP';
+    sbCanal.innerHTML='<span class="warn">INTRANET AP</span>';
+    sbNode.className='sb-val warn'; sbNode.textContent='AP LOCAL';
+    document.getElementById('ct-internet').className='ct-item inactive';
+    document.getElementById('ct-intranet').className='ct-item active';
+    document.getElementById('ct-serial').className='ct-item standby';
+    document.getElementById('chart-live-badge').style.color='var(--amber)';
+  } else if(m==='serial'){
+    badge.className='serial'; modeEl.textContent='BT / SERIAL';
+    sbCanal.innerHTML='<span class="info">SERIAL</span>';
+    sbNode.className='sb-val info'; sbNode.textContent='BT/SERIAL';
+    document.getElementById('ct-serial').className='ct-item active';
+    document.getElementById('serial-panel').classList.add('visible');
+    document.getElementById('chart-live-badge').style.color='var(--accent)';
+  } else if(m==='demo'){
+    badge.className='demo'; modeEl.textContent='MODO DEMO';
+    sbCanal.innerHTML='<span style="color:#a070ff">DEMO LOCAL</span>';
+    sbNode.className='sb-val'; sbNode.textContent='SIMULADO';
+    document.getElementById('ct-internet').className='ct-item inactive';
+    document.getElementById('ct-intranet').className='ct-item inactive';
+    document.getElementById('ct-serial').className='ct-item standby';
+    document.getElementById('serial-panel').classList.add('visible');
+    document.getElementById('chart-live-badge').style.color='#a070ff';
+  }
+}
+
+// ─── Failover ─────────────────────────────────────────────────────
+function onFail(){
+  failCount++;
+  if(failCount<CFG.maxFails) return;
+  if(mode==='internet'){
+    console.warn('[GeoNode] Internet → Intranet');
+    stopHTTP(); setMode('intranet'); startHTTP();
+  } else if(mode==='intranet'){
+    console.warn('[GeoNode] Intranet → Serial/Demo');
+    stopHTTP(); setMode('demo'); startDemo();
+  }
+}
+
+// ─── HTTP Fetch ───────────────────────────────────────────────────
+async function doFetch(){
+  const url = (mode==='internet') ? internetURL : CFG.apIP;
+  if(!url){ onFail(); return; }
+  try{
+    const ctrl=new AbortController();
+    const tid=setTimeout(()=>ctrl.abort(),CFG.timeout);
+    const r=await fetch(url+'/data',{
+      signal:ctrl.signal, cache:'no-store',
+      headers:{'Accept':'application/json'}
+    });
+    clearTimeout(tid);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const d=await r.json();
+    applyData(d);
+    failCount=0;
+  }catch(e){
+    onFail();
+  }
+}
+function startHTTP(){ if(!fetchLoop) fetchLoop=setInterval(doFetch,CFG.fetchInterval); doFetch(); }
+function stopHTTP() { clearInterval(fetchLoop); fetchLoop=null; }
+
+// ─── Demo mode ────────────────────────────────────────────────────
+// Simula señal sísmica con ruido+picos aleatorios
+function startDemo(){
+  if(demoLoop) return;
+  let pico=0, picoT=0;
+  demoLoop=setInterval(()=>{
+    demoT+=0.05;
+    if(Math.random()<0.004){ pico=3+Math.random()*5; picoT=15; }
+    if(picoT>0){ picoT--; } else { pico*=0.92; }
+    const noise=Math.random()*0.25;
+    const wave=Math.abs(Math.sin(demoT*0.7)*0.3+Math.cos(demoT*1.3)*0.2);
+    const mag=parseFloat((noise+wave+pico).toFixed(3));
+    const umbral=4.5;
+    const status=mag>7?'RIESGO CRITICO':mag>umbral?'SISMO DETECTADO':'ESTRUCTURA SEGURA';
+    applyData({mag,umbral,status,temp:27+Math.random(),uptime:Math.floor(Date.now()/1000)%86400});
+  },CFG.demoInterval);
+}
+
+// ─── Web Serial API ───────────────────────────────────────────────
+async function connectSerial(){
+  if(!('serial' in navigator)){
+    logSerial('⚠ Web Serial API no disponible. Usa Chrome o Edge.');
+    return;
+  }
+  try{
+    serialPort=await navigator.serial.requestPort();
+    await serialPort.open({baudRate:115200});
+    logSerial('✓ Puerto abierto — leyendo datos...');
+    clearInterval(demoLoop); demoLoop=null;
+    setMode('serial');
+    document.getElementById('ct-s-status').textContent='ACTIVO';
+    const dec=new TextDecoderStream();
+    serialPort.readable.pipeTo(dec.writable);
+    serialReader=dec.readable.getReader();
+    serialBuf='';
+    readSerial();
+  }catch(e){ logSerial('✗ '+e.message); }
+}
+
+async function readSerial(){
+  while(true){
+    try{
+      const{value,done}=await serialReader.read();
+      if(done) break;
+      serialBuf+=value;
+      let nl;
+      while((nl=serialBuf.indexOf('\n'))>-1){
+        const line=serialBuf.slice(0,nl).trim();
+        serialBuf=serialBuf.slice(nl+1);
+        if(line.startsWith('{')){
+          try{
+            const d=JSON.parse(line);
+            applyData(d);
+            logSerial('▶ mag='+parseFloat(d.mag).toFixed(3)+' | '+d.status);
+          }catch(e){ logSerial('✗ JSON: '+line.slice(0,35)); }
+        }
+      }
+    }catch(e){ logSerial('✗ Error serial: '+e.message); break; }
+  }
+}
+
+function logSerial(msg){
+  const el=document.getElementById('serial-log');
+  const ts=new Date().toTimeString().slice(0,8);
+  el.textContent+='\n['+ts+'] '+msg;
+  el.scrollTop=el.scrollHeight;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  ARRANQUE — Detección automática de canal
+// ═══════════════════════════════════════════════════════════════════
+async function init(){
+  initChart();
+
+  const origin=window.location.origin;
+  const fromESP=/192\.168\./.test(origin) || /geonode/i.test(origin);
+
+  if(fromESP){
+    // Navegamos directamente desde el ESP32
+    if(origin.includes('192.168.4.')){
+      // AP → Intranet
+      setMode('intranet');
+      startHTTP();
+    } else {
+      // IP STA → Internet (canal 1)
+      internetURL=origin;
+      setMode('internet', origin.replace('http://',''));
+      startHTTP();
+    }
+    return;
+  }
+
+// Canal 1: Internet (probar IPs conocidas en la red local)
+  const candidatasInternet = [
+    'http://192.168.1.100',
+    'http://192.168.0.100',
+    'http://geonode.local'
+  ];
+
+  for (const url of candidatasInternet) {
+    try {
+      const ctrl = new AbortController();
+      setTimeout(() => ctrl.abort(), 800);
+      const r = await fetch(url + '/data', { signal: ctrl.signal, cache: 'no-store' });
+      if (r.ok) {
+        internetURL = url;
+        setMode('internet', url.replace('http://', ''));
+        startHTTP();
+        return; 
+      }
+    } catch (e) { /* Error de conexión, salta a la siguiente IP */ }
+  }
+
+  // Canal 2: Intranet AP (Conexión directa al WiFi del ESP32)
+  try {
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 1000);
+    const r = await fetch(CFG.apIP + '/data', { signal: ctrl.signal, cache: 'no-store' });
+    if (r.ok) {
+      setMode('intranet');
+      startHTTP();
+      return; 
+    }
+  } catch (e) { /* No se detectó el Punto de Acceso */ }
+
+  // Canal 3: Serial / Espera Activa (Sin Datos de Ejemplo)
+  console.warn('[GeoNode] Nodo no detectado. Reintentando búsqueda WiFi en 5s...');
+  setMode('none'); 
+  document.getElementById('conn-mode').textContent = 'BUSCANDO NODO SENSOR...';
+  
+  // Reintento automático: vuelve a ejecutar la función en 5 segundos
+  setTimeout(init, 5000); 
+}
+
+
+init();
+</script>
+</body>
+</html>
